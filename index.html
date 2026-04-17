@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2c3e50">
+    <title>Dr. Driving Mobile</title>
+    <style>
+        body { margin: 0; background: #87CEEB; overflow: hidden; font-family: 'Arial Black', sans-serif; touch-action: none; }
+        #container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; }
+        canvas { background: #87CEEB; width: 100%; height: 70%; display: block; }
+        #dashboard { width: 100%; height: 30%; background: #2c3e50; border-top: 5px solid #1a252f; display: flex; justify-content: space-around; align-items: center; }
+        .pedal { width: 75px; height: 125px; background: #333; border: 4px solid #555; border-radius: 12px; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; cursor: pointer; user-select: none; }
+        #gas { background: linear-gradient(#2ecc71, #27ae60); }
+        #brake { background: linear-gradient(#e74c3c, #c0392b); }
+        #wheel { width: 140px; height: 140px; background: url('https://cdn-icons-png.flaticon.com/512/2164/2164532.png') no-repeat center/contain; }
+        #hud { position: absolute; top: 15px; left: 15px; color: #fff; font-size: 20px; text-shadow: 2px 2px #000; z-index: 10; }
+        #crack-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 70%; background: url('https://www.transparentpng.com/download/broken-glass/broken-glass-screen-png-3.png') no-repeat center/cover; display: none; pointer-events: none; z-index: 20; opacity: 0.8; }
+        #game-over-ui { position: absolute; top: 35%; left: 50%; transform: translate(-50%, -50%); color: #fff; text-align: center; display: none; z-index: 30; background: rgba(0,0,0,0.9); padding: 20px; border-radius: 15px; border: 4px solid #e74c3c; }
+    </style>
+</head>
+<body>
+<div id="container" onclick="checkRestart()">
+    <div id="hud">VEL: <span id="speedVal">0</span> km/h</div>
+    <div id="crack-overlay"></div>
+    <div id="game-over-ui"><h1>COLISÃO!</h1><p>Clique para Reiniciar</p></div>
+    <canvas id="gameCanvas"></canvas>
+    <div id="dashboard">
+        <div id="brake" class="pedal" ontouchstart="isBraking=true" ontouchend="isBraking=false" onmousedown="isBraking=true" onmouseup="isBraking=false">FREIO</div>
+        <div id="wheel"></div>
+        <div id="gas" class="pedal" ontouchstart="isGas=true" ontouchend="isGas=false" onmousedown="isGas=true" onmouseup="isGas=false">GAS</div>
+    </div>
+</div>
+<script>
+    // A Lógica do jogo (a mesma da última versão) vai aqui dentro
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const wheelImg = document.getElementById('wheel');
+    const crack = document.getElementById('crack-overlay');
+    const gameOverUI = document.getElementById('game-over-ui');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight * 0.7;
+    let speed = 0, playerX = 0, steerAngle = 0, isGas = false, isBraking = false, roadOffset = 0, gameActive = true;
+    const buildings = [];
+    for(let i=0; i<10; i++) buildings.push({ side: i%2==0?-1:1, z: i*300, h: 250+Math.random()*200, color: '#bdc3c7' });
+    const traffic = [{ lane: -0.4, z: 1200, color: '#3498db' }, { lane: 0.4, z: 2000, color: '#f39c12' }];
+    function checkRestart() { if(!gameActive) location.reload(); }
+    window.addEventListener('keydown', (e) => { if(e.key.toLowerCase() === 'r') location.reload(); if(!gameActive) return; if(e.code == 'ArrowUp' || e.code == 'KeyW') isGas = true; if(e.code == 'ArrowDown' || e.code == 'KeyS') isBraking = true; if(e.code == 'ArrowLeft' || e.code == 'KeyA') steerAngle = Math.max(steerAngle - 15, -90); if(e.code == 'ArrowRight' || e.code == 'KeyD') steerAngle = Math.min(steerAngle + 15, 90); });
+    window.addEventListener('keyup', (e) => { if(e.code == 'ArrowUp' || e.code == 'KeyW') isGas = false; if(e.code == 'ArrowDown' || e.code == 'KeyS') isBraking = false; });
+    function draw() {
+        const w = canvas.width, h = canvas.height, horizon = h * 0.45;
+        ctx.fillStyle = "#87CEEB"; ctx.fillRect(0, 0, w, h);
+        if(gameActive) roadOffset += speed * 0.3;
+        for(let i = 0; i < h - horizon; i++) {
+            let p = i / (h - horizon);
+            let roadW = 200 + (p * w * 0.75);
+            let x = (w/2) - (roadW/2) - (playerX * p * w * 0.6);
+            ctx.fillStyle = (Math.floor((i - roadOffset) * 0.1) % 2 == 0) ? "#2ecc71" : "#27ae60";
+            ctx.fillRect(0, horizon + i, w, 1);
+            ctx.fillStyle = "#bdc3c7"; ctx.fillRect(x - 15, horizon + i, roadW + 30, 1);
+            ctx.fillStyle = "#444"; ctx.fillRect(x, horizon + i, roadW, 1);
+        }
+        let limit = 0.82; 
+        if (playerX > limit) { playerX = limit; speed *= 0.95; }
+        if (playerX < -limit) { playerX = -limit; speed *= 0.95; }
+        buildings.forEach(b => {
+            if(gameActive) b.z -= speed * 0.3;
+            if(b.z < 1) b.z = 3000;
+            let scale = 160 / b.z;
+            let screenX = (w/2) + (b.side * 500 * scale * 5) - (playerX * scale * w * 0.6);
+            ctx.fillStyle = b.color;
+            ctx.fillRect(screenX - (150*scale*5)/2, horizon - (b.h*scale*5) + 20, 150*scale*5, b.h*scale*5);
+        });
+        traffic.forEach(car => {
+            if(gameActive) car.z -= (speed * 0.3) + 12;
+            if(car.z < 1) { car.z = 2500; car.lane = (Math.random() - 0.5); }
+            let scale = 160 / car.z;
+            let screenX = (w/2) + (car.lane * w * 0.5 * scale * 2) - (playerX * scale * w * 0.6);
+            if(car.z < 1000) {
+                ctx.fillStyle = car.color;
+                ctx.fillRect(screenX - (50*scale*5)/2, horizon + (scale * 100), 50*scale*5, 35*scale*5);
+                if(gameActive && car.z < 180 && car.z > 80 && Math.abs(screenX - w/2) < 45) {
+                    gameActive = false;
+                    crack.style.display = "block";
+                    gameOverUI.style.display = "block";
+                }
+            }
+        });
+        ctx.fillStyle = "#c0392b"; ctx.beginPath(); ctx.moveTo(w/2 - 140, h); ctx.lineTo(w/2 - 100, h - 80); ctx.lineTo(w/2 + 100, h - 80); ctx.lineTo(w/2 + 140, h); ctx.fill();
+        if(gameActive) {
+            if(isGas) speed = Math.min(speed + 0.6, 140); else speed = Math.max(speed - 0.3, 0);
+            if(isBraking) speed = Math.max(speed - 2.5, 0);
+            playerX += (steerAngle / 850) * (speed / 40);
+            if(!isGas && !isBraking) steerAngle *= 0.93;
+        } else { speed = 0; }
+        wheelImg.style.transform = `rotate(${steerAngle}deg)`;
+        document.getElementById('speedVal').innerText = Math.floor(speed);
+        requestAnimationFrame(draw);
+    }
+    draw();
+</script>
+</body>
+</html>
